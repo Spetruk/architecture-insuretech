@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: scaletestapp-metrics
+  namespace: monitoring  # Перемещаем в namespace monitoring
+  labels:
+    app: scaletestapp
+    release: prometheus  # Важно: должно совпадать с release name Prometheus
+spec:
+  selector:
+    matchLabels:
+      app: scaletestapp
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+  namespaceSelector:
+    matchNames:
+    - default

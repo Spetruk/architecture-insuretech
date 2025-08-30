@@ -1,0 +1,428 @@
+# GraphQL Schema для сервиса client-info
+# Преобразование из REST API в GraphQL для оптимизации запросов клиентских данных
+
+"""
+Основная сущность - Клиент
+Объединяет базовую информацию о клиенте и связанные данные
+"""
+type Client {
+  # Базовые поля клиента (из REST /clients/{id})
+  id: ID!
+  name: String!
+  age: Int!
+  
+  # Связанные данные - загружаются по требованию (решает N+1 problem)
+  # Заменяет отдельные REST вызовы /clients/{id}/documents и /clients/{id}/relatives
+  documents: [Document!]!
+  relatives: [Relative!]!
+  
+  # Дополнительные поля для расширения (из упомянутых 500 атрибутов)
+  # Можно запрашивать селективно в зависимости от сценария
+  
+  # Контактная информация
+  contacts: ContactInfo
+  
+  # Адресная информация  
+  addresses: [Address!]!
+  
+  # Финансовая информация
+  financialInfo: FinancialInfo
+  
+  # Страховая история
+  insuranceHistory: [InsurancePolicy!]!
+  
+  # Метаданные
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  isActive: Boolean!
+}
+
+"""
+Документы клиента
+Соответствует REST endpoint /clients/{id}/documents
+"""
+type Document {
+  id: ID!
+  type: DocumentType!
+  number: String!
+  issueDate: Date!
+  expiryDate: Date
+  issuedBy: String
+  
+  # Связь с клиентом (для обратных запросов)
+  client: Client!
+  
+  # Дополнительные поля для полноты данных
+  status: DocumentStatus!
+  scannedCopy: String # URL скан-копии
+  verificationStatus: VerificationStatus!
+}
+
+"""
+Родственники клиента  
+Соответствует REST endpoint /clients/{id}/relatives
+"""
+type Relative {
+  id: ID!
+  relationType: RelationType!
+  name: String!
+  age: Int
+  
+  # Связь с основным клиентом
+  client: Client!
+  
+  # Дополнительные поля
+  contacts: ContactInfo
+  isEmergencyContact: Boolean!
+  isInsuranceBeneficiary: Boolean!
+}
+
+"""
+Контактная информация (композитный тип)
+"""
+type ContactInfo {
+  phone: String
+  email: String
+  alternativePhone: String
+  preferredContactMethod: ContactMethod!
+}
+
+"""
+Адресная информация
+"""
+type Address {
+  id: ID!
+  type: AddressType!
+  country: String!
+  region: String!
+  city: String!
+  street: String!
+  building: String!
+  apartment: String
+  postalCode: String!
+  isDefault: Boolean!
+}
+
+"""
+Финансовая информация клиента
+"""
+type FinancialInfo {
+  monthlyIncome: Float
+  employmentStatus: EmploymentStatus!
+  employer: String
+  creditRating: CreditRating
+  bankAccounts: [BankAccount!]!
+}
+
+"""
+Банковский счет
+"""
+type BankAccount {
+  id: ID!
+  bankName: String!
+  accountNumber: String!
+  accountType: BankAccountType!
+  isDefault: Boolean!
+}
+
+"""
+Страховой полис (история)
+"""
+type InsurancePolicy {
+  id: ID!
+  policyNumber: String!
+  policyType: InsurancePolicyType!
+  startDate: Date!
+  endDate: Date!
+  premium: Float!
+  status: PolicyStatus!
+  insuranceCompany: String!
+}
+
+# Enums для типизации
+
+enum DocumentType {
+  PASSPORT
+  DRIVER_LICENSE
+  INSURANCE_CERTIFICATE
+  BIRTH_CERTIFICATE
+  MARRIAGE_CERTIFICATE
+  DIVORCE_CERTIFICATE
+  EDUCATION_CERTIFICATE
+  EMPLOYMENT_CERTIFICATE
+  MEDICAL_CERTIFICATE
+  OTHER
+}
+
+enum DocumentStatus {
+  ACTIVE
+  EXPIRED
+  PENDING_VERIFICATION
+  REJECTED
+  CANCELLED
+}
+
+enum VerificationStatus {
+  NOT_VERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum RelationType {
+  SPOUSE
+  CHILD
+  PARENT
+  SIBLING
+  GRANDPARENT
+  GRANDCHILD
+  UNCLE_AUNT
+  COUSIN
+  FRIEND
+  OTHER
+}
+
+enum ContactMethod {
+  PHONE
+  EMAIL
+  SMS
+  POSTAL_MAIL
+}
+
+enum AddressType {
+  HOME
+  WORK
+  MAILING
+  TEMPORARY
+  REGISTRATION
+}
+
+enum EmploymentStatus {
+  EMPLOYED_FULL_TIME
+  EMPLOYED_PART_TIME
+  SELF_EMPLOYED
+  UNEMPLOYED
+  RETIRED
+  STUDENT
+  OTHER
+}
+
+enum CreditRating {
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+  NO_CREDIT_HISTORY
+}
+
+enum BankAccountType {
+  CHECKING
+  SAVINGS
+  CREDIT
+  INVESTMENT
+  OTHER
+}
+
+enum InsurancePolicyType {
+  AUTO
+  HEALTH
+  LIFE
+  PROPERTY
+  TRAVEL
+  LIABILITY
+  OTHER
+}
+
+enum PolicyStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PENDING
+  SUSPENDED
+}
+
+# Scalar types
+scalar Date
+scalar DateTime
+
+# Root Query Type
+type Query {
+  """
+  Получить клиента по ID
+  Заменяет REST GET /clients/{id}
+  Преимущество: можно запросить только нужные поля и связанные данные
+  """
+  client(id: ID!): Client
+  
+  """
+  Поиск клиентов по различным критериям
+  Расширение функциональности по сравнению с REST API
+  """
+  clients(
+    # Фильтры для поиска
+    name: String
+    phone: String
+    email: String
+    documentNumber: String
+    
+    # Пагинация
+    first: Int = 10
+    offset: Int = 0
+    
+    # Сортировка
+    orderBy: ClientOrderBy = CREATED_AT_DESC
+  ): ClientConnection!
+  
+  """
+  Получить документы клиента
+  Заменяет REST GET /clients/{id}/documents
+  Можно использовать как отдельный запрос или через client.documents
+  """
+  clientDocuments(
+    clientId: ID!
+    documentType: DocumentType
+    status: DocumentStatus
+  ): [Document!]!
+  
+  """
+  Получить родственников клиента  
+  Заменяет REST GET /clients/{id}/relatives
+  Можно использовать как отдельный запрос или через client.relatives
+  """
+  clientRelatives(
+    clientId: ID!
+    relationType: RelationType
+  ): [Relative!]!
+}
+
+# Пагинация (Relay-style connections)
+type ClientConnection {
+  edges: [ClientEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ClientEdge {
+  node: Client!
+  cursor: String!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+enum ClientOrderBy {
+  CREATED_AT_ASC
+  CREATED_AT_DESC
+  NAME_ASC
+  NAME_DESC
+  AGE_ASC
+  AGE_DESC
+}
+
+# Mutations (для будущего расширения)
+type Mutation {
+  """
+  Создать нового клиента
+  """
+  createClient(input: CreateClientInput!): CreateClientPayload!
+  
+  """
+  Обновить информацию о клиенте
+  """
+  updateClient(id: ID!, input: UpdateClientInput!): UpdateClientPayload!
+  
+  """
+  Добавить документ клиенту
+  """
+  addClientDocument(input: AddDocumentInput!): AddDocumentPayload!
+  
+  """
+  Добавить родственника клиенту
+  """
+  addClientRelative(input: AddRelativeInput!): AddRelativePayload!
+}
+
+# Input types для mutations
+input CreateClientInput {
+  name: String!
+  age: Int!
+  contacts: ContactInfoInput
+  addresses: [AddressInput!]
+}
+
+input UpdateClientInput {
+  name: String
+  age: Int
+  contacts: ContactInfoInput
+  isActive: Boolean
+}
+
+input ContactInfoInput {
+  phone: String
+  email: String
+  alternativePhone: String
+  preferredContactMethod: ContactMethod
+}
+
+input AddressInput {
+  type: AddressType!
+  country: String!
+  region: String!
+  city: String!
+  street: String!
+  building: String!
+  apartment: String
+  postalCode: String!
+  isDefault: Boolean = false
+}
+
+input AddDocumentInput {
+  clientId: ID!
+  type: DocumentType!
+  number: String!
+  issueDate: Date!
+  expiryDate: Date
+  issuedBy: String
+  scannedCopy: String
+}
+
+input AddRelativeInput {
+  clientId: ID!
+  relationType: RelationType!
+  name: String!
+  age: Int
+  contacts: ContactInfoInput
+  isEmergencyContact: Boolean = false
+  isInsuranceBeneficiary: Boolean = false
+}
+
+# Payload types для mutations
+type CreateClientPayload {
+  client: Client
+  errors: [Error!]
+}
+
+type UpdateClientPayload {
+  client: Client
+  errors: [Error!]
+}
+
+type AddDocumentPayload {
+  document: Document
+  errors: [Error!]
+}
+
+type AddRelativePayload {
+  relative: Relative
+  errors: [Error!]
+}
+
+type Error {
+  message: String!
+  code: String
+  field: String
+}
